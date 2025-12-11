@@ -73,4 +73,7 @@ extern "C" {
 #define CHAR_Y 34
 #define CHAR_Z 35
 
+void Seven_Segment_Digit (unsigned char digit, unsigned char hex_char, unsigned char dot);
+void Seven_Segment(unsigned int HexValue);
+
 #endif /* __SEG7_H */

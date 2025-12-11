@@ -267,7 +267,7 @@ int main(void)
   Song[76].note = G4; Song[76].size = quarter; Song[76].tempo = Initial_Tempo; Song[76].space = 100; Song[76].end = 0;
   Song[77].note = rest; Song[77].size = quarter; Song[77].tempo = Initial_Tempo; Song[77].space = 100; Song[77].end = 0;
   Song[78].note = F4; Song[78].size = quarter; Song[78].tempo = Initial_Tempo; Song[78].space = 100; Song[78].end = 0;
-  Song[99].note = rest; Song[99].size = quarter; Song[99].tempo = Initial_Tempo; Song[99].space = 10; Song[99].end = 1;
+  Song[79].note = rest; Song[79].size = quarter; Song[79].tempo = Initial_Tempo; Song[79].space = 10; Song[79].end = 1;
 
   Save_Note = Song[0].note;
   INDEX = 0;
@@ -294,7 +294,9 @@ int main(void)
 	  ADC_value = HAL_ADC_GetValue(&hadc1);
 	  paddle_pos = (char)(ADC_value / 512); 
 
-	  // 2. Check for start button press (B1/PA0) and state change (Spec 4)
+	  // In Startup_Message array:
+    // Change CHAR_P, CHAR_C, CHAR_1, CHAR_0  ->  CHAR_B, CHAR_1
+    // Text becomes "PRESS B1 TO START"
 	  if (Game_State == 0 && HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET)
 	  {
 		  Game_State = 1; 
