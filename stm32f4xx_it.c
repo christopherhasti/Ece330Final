@@ -59,11 +59,17 @@ extern HCD_HandleTypeDef hhcd_USB_OTG_FS;
 extern RTC_HandleTypeDef hrtc;
 extern TIM_HandleTypeDef htim7;
 /* USER CODE BEGIN EV */
-
+extern char paddle_pos; 
+extern int Game_State; 
+extern int Score; 
+extern int Miss_Count; 
+extern int Max_Misses; 
+extern int Tempo_Increment;
+extern int get_display_for_note(int note); 
 /* USER CODE END EV */
 
 /******************************************************************************/
-/*           Cortex-M4 Processor Interruption and Exception Handlers          */
+/* Cortex-M4 Processor Interruption and Exception Handlers          */
 /******************************************************************************/
 /**
   * @brief This function handles Non maskable interrupt.
@@ -263,41 +269,91 @@ void TIM7_IRQHandler(void)
 	TONE++;
 	ramp++;
 
-	/* This code plays the song from the song array structure */
-	if ((Music_ON > 0) && (Song[INDEX].note > 0) && ((Song[INDEX].tempo/Song[INDEX].size - Song[INDEX].space) > COUNT))
+	if ((Music_ON > 0) && (Game_State == 1))
 	{
-
-		if (Song[INDEX].note <= TONE)
+		// Condition 1: Note is currently playing (TONE check for sound output)
+		if ((Song[INDEX].note > 0) && ((Song[INDEX].tempo/Song[INDEX].size - Song[INDEX].space) > COUNT))
 		{
-			GPIOD->ODR ^= 1;
-			TONE = 0;
+			if (Song[INDEX].note <= TONE)
+			{
+				int display_for_note = get_display_for_note(Song[INDEX].note);
+
+				if (display_for_note == paddle_pos)
+				{
+					GPIOD->ODR ^= 1; 
+				}
+				else
+				{
+					GPIOD->ODR &= ~1; 
+				}
+
+				TONE = 0;
+			}
 		}
-	}
-	else if ((Music_ON > 0) && Song[INDEX].tempo/Song[INDEX].size > COUNT)
-	{
-		TONE = 0;
-	}
-	else if ((Music_ON > 0) && Song[INDEX].tempo/Song[INDEX].size == COUNT)
-	{
-		COUNT = 0;
-		TONE = 0;
-		if (!(Song[INDEX].end))
+		// Condition 2: Space/Rest duration
+		else if (Song[INDEX].tempo/Song[INDEX].size > COUNT)
+		{
+			TONE = 0;
+			GPIOD->ODR &= ~1;
+		}
+		// Condition 3: End of note duration: Check for Hit/Miss
+		else if (Song[INDEX].tempo/Song[INDEX].size == COUNT)
+		{
+			GPIOD->ODR &= ~1; 
+
+			int note_is_rest = (Song[INDEX].note == rest);
+
+			if (!note_is_rest) 
+			{
+				int display_for_note = get_display_for_note(Song[INDEX].note);
+
+				if (display_for_note == paddle_pos)
 				{
-					INDEX++;
-					Save_Note = Song[INDEX].note;
+					Score++; 
+					Miss_Count = 0; 
 				}
-		if ((Song[INDEX].end))
+				else
 				{
-			  	  	  Save_Note = Song[0].note;  // Needed for vibrato effect
-			  	  	  INDEX = 0;
-			  	  	  Music_ON = 0;
+					Miss_Count++; 
 				}
+			}
+
+			COUNT = 0;
+			TONE = 0;
+
+			if (!(Song[INDEX].end))
+			{
+				INDEX++;
+				Save_Note = Song[INDEX].note; 
+			}
+			else 
+			{
+				if (Miss_Count >= Max_Misses) 
+				{
+					Game_State = 3; 
+				}
+				else
+				{
+					Game_State = 2; 
+					
+					for (int i = 0; i < 100; i++)
+					{
+						if (Song[i].end == 1) break;
+						Song[i].tempo -= Tempo_Increment; 
+						if (Song[i].tempo < 500) Song[i].tempo = 500; 
+					}
+					
+					Save_Note = Song[0].note;
+					INDEX = 0;
+				}
+			}
+		}
 	}
 	else if (Music_ON == 0)
-		{
-			TONE = 0;
-			COUNT = 0;
-		}
+	{
+		TONE = 0;
+		COUNT = 0;
+	}
 
 
 	/* This code dims the RGB LEDs using PWM */

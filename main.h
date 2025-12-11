@@ -3,7 +3,7 @@
   ******************************************************************************
   * @file           : main.h
   * @brief          : Header for main.c file.
-  *                   This file contains the common defines of the application.
+  * This file contains the common defines of the application.
   ******************************************************************************
   * @attention
   *
@@ -67,6 +67,18 @@ extern char *Save_Pointer;
 extern char *Message_Pointer;
 extern int Delay_msec;
 extern int Delay_counter;
+
+extern ADC_HandleTypeDef hadc1; 
+extern char Display[8]; 
+extern int ADC_value; 
+extern char paddle_pos; 
+extern int Score; 
+extern int Miss_Count; 
+extern int Max_Misses; 
+extern int Game_State; 
+extern int Initial_Tempo;
+extern int Tempo_Increment;
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -81,6 +93,7 @@ extern int Delay_counter;
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
+int get_display_for_note(int note); 
 
 /* USER CODE BEGIN EFP */
 
@@ -116,11 +129,8 @@ void Error_Handler(void);
 #define CLK_IN_Pin GPIO_PIN_10
 #define CLK_IN_GPIO_Port GPIOB
 #define LD4_Pin GPIO_PIN_12
-#define LD4_GPIO_Port GPIOD
 #define LD3_Pin GPIO_PIN_13
-#define LD3_GPIO_Port GPIOD
 #define LD5_Pin GPIO_PIN_14
-#define LD5_GPIO_Port GPIOD
 #define LD6_Pin GPIO_PIN_15
 #define LD6_GPIO_Port GPIOD
 #define I2S3_MCK_Pin GPIO_PIN_7

@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,7 +52,18 @@ TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart3;
 
+ADC_HandleTypeDef hadc1; 
+
 /* USER CODE BEGIN PV */
+char Display[8] = {SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE}; 
+int ADC_value = 0; 
+char paddle_pos = 0; 
+int Score = 0; 
+int Miss_Count = 0; 
+int Max_Misses = 5; 
+int Game_State = 0; 
+int Initial_Tempo = 1400; 
+int Tempo_Increment = 200; 
 
 /* USER CODE END PV */
 
@@ -60,6 +71,9 @@ UART_HandleTypeDef huart3;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM7_Init(void);
+static void MX_ADC1_Init(void);
+void Update_Display_Buffer(void);
+void Display_7_Segment(void);
 
 
 /* USER CODE BEGIN PFP */
@@ -85,7 +99,7 @@ int Save_Note = 0;
 int Vibrato_Depth = 1;
 int Vibrato_Rate = 40;
 int Vibrato_Count = 0;
-char Animate_On = 0;
+char Animate_On = 0; 
 char Message_Length = 0;
 char *Message_Pointer;
 char *Save_Pointer;
@@ -94,14 +108,39 @@ int Delay_counter = 0;
 
 
 /* HELLO ECE-330L */
-char Message[] =
+char Message[40]; 
+char Startup_Message[] =
 		{SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,
-		CHAR_H,CHAR_E,CHAR_L,CHAR_L,CHAR_O,SPACE,CHAR_E,CHAR_C,CHAR_E,DASH,CHAR_3,CHAR_3,CHAR_0,CHAR_L,
+		CHAR_P,CHAR_R,CHAR_E,CHAR_S,CHAR_S,SPACE,CHAR_P,CHAR_C,CHAR_1,CHAR_0,SPACE,CHAR_T,CHAR_O,SPACE,CHAR_S,CHAR_T,CHAR_A,CHAR_R,CHAR_T,
 		SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE};
+
 
 /* Declare array for Song */
 Music Song[100];
 /* USER CODE END 0 */
+
+/**
+  * @brief  Helper function to map note frequency to 7-segment display position (0-7)
+  * @param  note: The note value 
+  * @retval The 7-segment display index (0-7) or -1 if rest
+  */
+int get_display_for_note(int note)
+{
+	int display_for_note = -1;
+	if (note > 0) 
+	{
+		if ((note < 82)) display_for_note = 7;
+		else if ((note < 97) && (note > 82)) display_for_note = 6;
+		else if ((note < 115) && (note > 97)) display_for_note = 5;
+		else if ((note < 135) && (note > 115)) display_for_note = 4;
+		else if ((note < 160) && (note > 135)) display_for_note = 3;
+		else if ((note < 195) && (note > 160)) display_for_note = 2;
+		else if ((note < 230) && (note > 195)) display_for_note = 1;
+		else if (note > 230) display_for_note = 0;
+	}
+	return display_for_note;
+}
+
 
 /**
   * @brief  The application entry point.
@@ -134,542 +173,272 @@ int main(void)
   MX_TIM7_Init();
   //MX_RTC_Init();
   /* USER CODE BEGIN 2 */
-
-  /********************************************************************
-   * PWR->CR |= ???;  //Enable Real Time Clock (RTC) Register Access  *
-   * RCC->BDCR |= ???;  //Set clock source for RTC                    *
-   * RCC->BDCR |= ???; //Enable RTC									  *
-   ********************************************************************/
-
+  MX_ADC1_Init(); 
+  
   /*** Configure GPIOs ***/
-  GPIOD->MODER = 0x55555555; // set all Port D pins to outputs
-  GPIOA->MODER |= 0x000000FF; // Port A mode register - make A0 to A3 analog pins
-  GPIOE->MODER |= 0x55555555; // Port E mode register - make E0 to E15 outputs
-  GPIOC->MODER |= 0x0; // Port C mode register - all inputs
-  GPIOE->ODR = 0xFFFF; // Set all Port E pins high
-
-  /*** Configure ADC1 ***/
-  RCC->APB2ENR |= 1<<8;  // Turn on ADC1 clock by forcing bit 8 to 1 while keeping other bits unchanged
-  ADC1->SMPR2 |= 1; // 15 clock cycles per sample
-  ADC1->CR2 |= 1;        // Turn on ADC1 by forcing bit 0 to 1 while keeping other bits unchanged
-
-  /*****************************************************************************************************
-  These commands are handled as part of the MX_TIM7_Init() function and don't need to be enabled
-  RCC->AHB1ENR |= 1<<5; // Enable clock for timer 7
-  __enable_irq(); // Enable interrupts
-  NVIC_EnableIRQ(TIM7_IRQn); // Enable Timer 7 Interrupt in the NVIC controller
-  *******************************************************************************************************/
-
-  TIM7->PSC = 199; //250Khz timer clock prescaler value, 250Khz = 50Mhz / 200
-  TIM7->ARR = 1; // Count to 1 then generate interrupt (divide by 2), 125Khz interrupt rate to increment byte counter for 78Hz PWM
-  TIM7->DIER |= 1; // Enable timer 7 interrupt
-  TIM7->CR1 |= 1; // Enable timer counting
-
-  /* Jeopardy Song */
-  Song[0].note = A4;
-  Song[0].size = quarter;
-  Song[0].tempo = 1400;
-  Song[0].space = 10;
-  Song[0].end = 0;
-
-  Song[1].note = D5;
-  Song[1].size = quarter;
-  Song[1].tempo = 1400;
-  Song[1].space = 10;
-  Song[1].end = 0;
-
-  Song[2].note = A4;
-  Song[2].size = quarter;
-  Song[2].tempo = 1400;
-  Song[2].space = 10;
-  Song[2].end = 0;
-
-  Song[3].note = D4;
-  Song[3].size = quarter;
-  Song[3].tempo = 1400;
-  Song[3].space = 10;
-  Song[3].end = 0;
-
-  Song[4].note = A4;
-  Song[4].size = quarter;
-  Song[4].tempo = 1400;
-  Song[4].space = 10;
-  Song[4].end = 0;
-
-  Song[5].note = D5;
-  Song[5].size = quarter;
-  Song[5].tempo = 1400;
-  Song[5].space = 10;
-  Song[5].end = 0;
-
-  Song[6].note = A4;
-  Song[6].size = quarter;
-  Song[6].tempo = 1400;
-  Song[6].space = 10;
-  Song[6].end = 0;
-
-  Song[7].note = rest;
-  Song[7].size = quarter;
-  Song[7].tempo = 1400;
-  Song[7].space = 10;
-  Song[7].end = 0;
-
-  Song[8].note = A4;
-  Song[8].size = quarter;
-  Song[8].tempo = 1400;
-  Song[8].space = 10;
-  Song[8].end = 0;
-
-  Song[9].note = D5;
-  Song[9].size = quarter;
-  Song[9].tempo = 1400;
-  Song[9].space = 10;
-  Song[9].end = 0;
-
-  Song[10].note = A4;
-  Song[10].size = quarter;
-  Song[10].tempo = 1400;
-  Song[10].space = 10;
-  Song[10].end = 0;
-
-  Song[11].note = D5;
-  Song[11].size = quarter;
-  Song[11].tempo = 1400;
-  Song[11].space = 10;
-  Song[11].end = 0;
-
-  Song[12].note = Fs5_Gb5;
-  Song[12].size = quarter;
-  Song[12].tempo = 1400;
-  Song[12].space = 100;
-  Song[12].end = 0;
-
-  Song[13].note = rest;
-  Song[13].size = _8th;
-  Song[13].tempo = 1400;
-  Song[13].space = 10;
-  Song[13].end = 0;
-
-  Song[14].note = E5;
-  Song[14].size = _8th;
-  Song[14].tempo = 1400;
-  Song[14].space = 10;
-  Song[14].end = 0;
-
-  Song[15].note = D5;
-  Song[15].size = _8th;
-  Song[15].tempo = 1400;
-  Song[15].space = 10;
-  Song[15].end = 0;
-
-  Song[16].note = Cs5_Db5;
-  Song[16].size = _8th;
-  Song[16].tempo = 1400;
-  Song[16].space = 10;
-  Song[16].end = 0;
-
-  Song[17].note = B4;
-  Song[17].size = _8th;
-  Song[17].tempo = 1400;
-  Song[17].space = 10;
-  Song[17].end = 0;
-
-  Song[18].note = As4_Bb4;
-  Song[18].size = _8th;
-  Song[18].tempo = 1400;
-  Song[18].space = 10;
-  Song[18].end = 0;
-
-  Song[19].note = A4;
-  Song[19].size = quarter;
-  Song[19].tempo = 1400;
-  Song[19].space = 10;
-  Song[19].end = 0;
-
-  Song[20].note = D5;
-  Song[20].size = quarter;
-  Song[20].tempo = 1400;
-  Song[20].space = 10;
-  Song[20].end = 0;
-
-  Song[21].note = A4;
-  Song[21].size = quarter;
-  Song[21].tempo = 1400;
-  Song[21].space = 10;
-  Song[21].end = 0;
-
-  Song[22].note = Fs4_Gb4;
-  Song[22].size = _8th;
-  Song[22].tempo = 1400;
-  Song[22].space = 10;
-  Song[22].end = 0;
-
-  Song[23].note = G4;
-  Song[23].size = _8th;
-  Song[23].tempo = 1400;
-  Song[23].space = 10;
-  Song[23].end = 0;
-
-  Song[24].note = A4;
-  Song[24].size = quarter;
-  Song[24].tempo = 1400;
-  Song[24].space = 10;
-  Song[24].end = 0;
-
-  Song[25].note = D5;
-  Song[25].size = quarter;
-  Song[25].tempo = 1400;
-  Song[25].space = 10;
-  Song[25].end = 0;
-
-  Song[26].note = A4;
-  Song[26].size = quarter;
-  Song[26].tempo = 1400;
-  Song[26].space = 10;
-  Song[26].end = 0;
-
-  Song[27].note = rest;
-  Song[27].size = quarter;
-  Song[27].tempo = 1400;
-  Song[27].space = 10;
-  Song[27].end = 0;
-
-  Song[28].note = D5;
-  Song[28].size = quarter;
-  Song[28].tempo = 1400;
-  Song[28].space = 100;
-  Song[28].end = 0;
-
-  Song[29].note = rest;
-  Song[29].size = _8th;
-  Song[29].tempo = 1400;
-  Song[29].space = 10;
-  Song[29].end = 0;
-
-  Song[30].note = B4;
-  Song[30].size = _8th;
-  Song[30].tempo = 1400;
-  Song[30].space = 10;
-  Song[30].end = 0;
-
-  Song[31].note = A4;
-  Song[31].size = quarter;
-  Song[31].tempo = 1400;
-  Song[31].space = 100;
-  Song[31].end = 0;
-
-  Song[32].note = G4;
-  Song[32].size = quarter;
-  Song[32].tempo = 1400;
-  Song[32].space = 100;
-  Song[32].end = 0;
-
-  Song[33].note = Fs4_Gb4;
-  Song[33].size = quarter;
-  Song[33].tempo = 1400;
-  Song[33].space = 100;
-  Song[33].end = 0;
-
-  Song[34].note = E4;
-  Song[34].size = quarter;
-  Song[34].tempo = 1400;
-  Song[34].space = 100;
-  Song[34].end = 0;
-
-  Song[35].note = D4;
-  Song[35].size = quarter;
-  Song[35].tempo = 1400;
-  Song[35].space = 100;
-  Song[35].end = 0;
-
-  Song[36].note = rest;
-  Song[36].size = quarter;
-  Song[36].tempo = 1400;
-  Song[36].space = 10;
-  Song[36].end = 0;
-
-  Song[37].note = C5;
-  Song[37].size = quarter;
-  Song[37].tempo = 1400;
-  Song[37].space = 10;
-  Song[37].end = 0;
-
-  Song[38].note = F5;
-  Song[38].size = quarter;
-  Song[38].tempo = 1400;
-  Song[38].space = 10;
-  Song[38].end = 0;
-
-  Song[39].note = C5;
-  Song[39].size = quarter;
-  Song[39].tempo = 1400;
-  Song[39].space = 10;
-  Song[39].end = 0;
-
-  Song[40].note = F4;
-  Song[40].size = _8th;
-  Song[40].tempo = 1400;
-  Song[40].space = 10;
-  Song[40].end = 0;
-
-  Song[41].note = F4;
-  Song[41].size = _8th;
-  Song[41].tempo = 1400;
-  Song[41].space = 10;
-  Song[41].end = 0;
-
-  Song[42].note = C5;
-  Song[42].size = quarter;
-  Song[42].tempo = 1400;
-  Song[42].space = 10;
-  Song[42].end = 0;
-
-  Song[43].note = F5;
-  Song[43].size = quarter;
-  Song[43].tempo = 1400;
-  Song[43].space = 10;
-  Song[43].end = 0;
-
-  Song[44].note = C5;
-  Song[44].size = quarter;
-  Song[44].tempo = 1400;
-  Song[44].space = 10;
-  Song[44].end = 0;
-
-  Song[45].note = rest;
-  Song[45].size = quarter;
-  Song[45].tempo = 1400;
-  Song[45].space = 10;
-  Song[45].end = 0;
-
-  Song[46].note = C5;
-  Song[46].size = quarter;
-  Song[46].tempo = 1400;
-  Song[46].space = 10;
-  Song[46].end = 0;
-
-  Song[47].note = F5;
-  Song[47].size = quarter;
-  Song[47].tempo = 1400;
-  Song[47].space = 10;
-  Song[47].end = 0;
-
-  Song[48].note = C5;
-  Song[48].size = quarter;
-  Song[48].tempo = 1400;
-  Song[48].space = 10;
-  Song[48].end = 0;
-
-  Song[49].note = F5;
-  Song[49].size = quarter;
-  Song[49].tempo = 1400;
-  Song[49].space = 10;
-  Song[49].end = 0;
-
-  Song[50].note = A5;
-  Song[50].size = quarter;
-  Song[50].tempo = 1400;
-  Song[50].space = 0;
-  Song[50].end = 0;
-
-  Song[51].note = A5;
-  Song[51].size = _8th;
-  Song[51].tempo = 1400;
-  Song[51].space = 10;
-  Song[51].end = 0;
-
-  Song[52].note = G5;
-  Song[52].size = _8th;
-  Song[52].tempo = 1400;
-  Song[52].space = 10;
-  Song[52].end = 0;
-
-  Song[53].note = F5;
-  Song[53].size = _8th;
-  Song[53].tempo = 1400;
-  Song[53].space = 10;
-  Song[53].end = 0;
-
-  Song[54].note = E5;
-  Song[54].size = _8th;
-  Song[54].tempo = 1400;
-  Song[54].space = 10;
-  Song[54].end = 0;
-
-  Song[55].note = D5;
-  Song[55].size = _8th;
-  Song[55].tempo = 1400;
-  Song[55].space = 10;
-  Song[55].end = 0;
-
-  Song[56].note = Cs5_Db5;
-  Song[56].size = _8th;
-  Song[56].tempo = 1400;
-  Song[56].space = 10;
-  Song[56].end = 0;
-
-  Song[57].note = C5;
-  Song[57].size = quarter;
-  Song[57].tempo = 1400;
-  Song[57].space = 10;
-  Song[57].end = 0;
-
-  Song[58].note = F5;
-  Song[58].size = quarter;
-  Song[58].tempo = 1400;
-  Song[58].space = 10;
-  Song[58].end = 0;
-
-  Song[59].note = C5;
-  Song[59].size = quarter;
-  Song[59].tempo = 1400;
-  Song[59].space = 10;
-  Song[59].end = 0;
-
-  Song[60].note = A4;
-  Song[60].size = _8th;
-  Song[60].tempo = 1400;
-  Song[60].space = 10;
-  Song[60].end = 0;
-
-  Song[61].note = As4_Bb4;
-  Song[61].size = _8th;
-  Song[61].tempo = 1400;
-  Song[61].space = 10;
-  Song[61].end = 0;
-
-  Song[62].note = C5;
-  Song[62].size = quarter;
-  Song[62].tempo = 1400;
-  Song[62].space = 10;
-  Song[62].end = 0;
-
-  Song[63].note = F5;
-  Song[63].size = quarter;
-  Song[63].tempo = 1400;
-  Song[63].space = 10;
-  Song[63].end = 0;
-
-  Song[64].note = C5;
-  Song[64].size = quarter;
-  Song[64].tempo = 1400;
-  Song[64].space = 10;
-  Song[64].end = 0;
-
-  Song[65].note = rest;
-  Song[65].size = _16th;
-  Song[65].tempo = 1400;
-  Song[65].space = 10;
-  Song[65].end = 0;
-
-  Song[66].note = C5;
-  Song[66].size = _16th;
-  Song[66].tempo = 1400;
-  Song[66].space = 10;
-  Song[66].end = 0;
-
-  Song[67].note = D5;
-  Song[67].size = _16th;
-  Song[67].tempo = 1400;
-  Song[67].space = 10;
-  Song[67].end = 0;
-
-  Song[68].note = E5;
-  Song[68].size = _16th;
-  Song[68].tempo = 1400;
-  Song[68].space = 10;
-  Song[68].end = 0;
-
-  Song[69].note = F5;
-  Song[69].size = quarter;
-  Song[69].tempo = 1400;
-  Song[69].space = 100;
-  Song[69].end = 0;
-
-  Song[70].note = rest;
-  Song[70].size = _8th;
-  Song[70].tempo = 1400;
-  Song[70].space = 10;
-  Song[70].end = 0;
-
-  Song[71].note = D5;
-  Song[71].size = _8th;
-  Song[71].tempo = 1400;
-  Song[71].space = 10;
-  Song[71].end = 0;
-
-  Song[72].note = C5;
-  Song[72].size = quarter;
-  Song[72].tempo = 1400;
-  Song[72].space = 100;
-  Song[72].end = 0;
-
-  Song[73].note = As4_Bb4;
-  Song[73].size = quarter;
-  Song[73].tempo = 1400;
-  Song[73].space = 100;
-  Song[73].end = 0;
-
-  Song[74].note = A4;
-  Song[74].size = quarter;
-  Song[74].tempo = 1400;
-  Song[74].space = 100;
-  Song[74].end = 0;
-
-  Song[75].note = rest;
-  Song[75].size = quarter;
-  Song[75].tempo = 1400;
-  Song[75].space = 100;
-  Song[75].end = 0;
-
-  Song[76].note = G4;
-  Song[76].size = quarter;
-  Song[76].tempo = 1400;
-  Song[76].space = 100;
-  Song[76].end = 0;
-
-  Song[77].note = rest;
-  Song[77].size = quarter;
-  Song[77].tempo = 1400;
-  Song[77].space = 100;
-  Song[77].end = 0;
-
-  Song[78].note = F4;
-  Song[78].size = quarter;
-  Song[78].tempo = 1400;
-  Song[78].space = 100;
-  Song[78].end = 0;
-
-  Song[99].note = rest;
-  Song[99].size = quarter;
-  Song[99].tempo = 1400;
-  Song[99].space = 10;
-  Song[99].end = 1;
-
-
-  Save_Note = Song[0].note;  // Needed for vibrato effect
+  GPIOD->MODER = 0x55555555; 
+  GPIOE->MODER |= 0x55555555; 
+  GPIOC->MODER |= 0x0; 
+  GPIOE->ODR = 0xFFFF; 
+
+  /*** Configure TIM7 ***/
+  TIM7->PSC = 199; 
+  TIM7->ARR = 1; 
+  TIM7->DIER |= 1; 
+  TIM7->CR1 |= 1; 
+
+  /* Jeopardy Song initialization */
+  Song[0].note = A4; Song[0].size = quarter; Song[0].tempo = Initial_Tempo; Song[0].space = 10; Song[0].end = 0;
+  Song[1].note = D5; Song[1].size = quarter; Song[1].tempo = Initial_Tempo; Song[1].space = 10; Song[1].end = 0;
+  Song[2].note = A4; Song[2].size = quarter; Song[2].tempo = Initial_Tempo; Song[2].space = 10; Song[2].end = 0;
+  Song[3].note = D4; Song[3].size = quarter; Song[3].tempo = Initial_Tempo; Song[3].space = 10; Song[3].end = 0;
+  Song[4].note = A4; Song[4].size = quarter; Song[4].tempo = Initial_Tempo; Song[4].space = 10; Song[4].end = 0;
+  Song[5].note = D5; Song[5].size = quarter; Song[5].tempo = Initial_Tempo; Song[5].space = 10; Song[5].end = 0;
+  Song[6].note = A4; Song[6].size = quarter; Song[6].tempo = Initial_Tempo; Song[6].space = 10; Song[6].end = 0;
+  Song[7].note = rest; Song[7].size = quarter; Song[7].tempo = Initial_Tempo; Song[7].space = 10; Song[7].end = 0;
+  Song[8].note = A4; Song[8].size = quarter; Song[8].tempo = Initial_Tempo; Song[8].space = 10; Song[8].end = 0;
+  Song[9].note = D5; Song[9].size = quarter; Song[9].tempo = Initial_Tempo; Song[9].space = 10; Song[9].end = 0;
+  Song[10].note = A4; Song[10].size = quarter; Song[10].tempo = Initial_Tempo; Song[10].space = 10; Song[10].end = 0;
+  Song[11].note = D5; Song[11].size = quarter; Song[11].tempo = Initial_Tempo; Song[11].space = 10; Song[11].end = 0;
+  Song[12].note = Fs5_Gb5; Song[12].size = quarter; Song[12].tempo = Initial_Tempo; Song[12].space = 100; Song[12].end = 0;
+  Song[13].note = rest; Song[13].size = _8th; Song[13].tempo = Initial_Tempo; Song[13].space = 10; Song[13].end = 0;
+  Song[14].note = E5; Song[14].size = _8th; Song[14].tempo = Initial_Tempo; Song[14].space = 10; Song[14].end = 0;
+  Song[15].note = D5; Song[15].size = _8th; Song[15].tempo = Initial_Tempo; Song[15].space = 10; Song[15].end = 0;
+  Song[16].note = Cs5_Db5; Song[16].size = _8th; Song[16].tempo = Initial_Tempo; Song[16].space = 10; Song[16].end = 0;
+  Song[17].note = B4; Song[17].size = _8th; Song[17].tempo = Initial_Tempo; Song[17].space = 10; Song[17].end = 0;
+  Song[18].note = As4_Bb4; Song[18].size = _8th; Song[18].tempo = Initial_Tempo; Song[18].space = 10; Song[18].end = 0;
+  Song[19].note = A4; Song[19].size = quarter; Song[19].tempo = Initial_Tempo; Song[19].space = 10; Song[19].end = 0;
+  Song[20].note = D5; Song[20].size = quarter; Song[20].tempo = Initial_Tempo; Song[20].space = 10; Song[20].end = 0;
+  Song[21].note = A4; Song[21].size = quarter; Song[21].tempo = Initial_Tempo; Song[21].space = 10; Song[21].end = 0;
+  Song[22].note = Fs4_Gb4; Song[22].size = _8th; Song[22].tempo = Initial_Tempo; Song[22].space = 10; Song[22].end = 0;
+  Song[23].note = G4; Song[23].size = _8th; Song[23].tempo = Initial_Tempo; Song[23].space = 10; Song[23].end = 0;
+  Song[24].note = A4; Song[24].size = quarter; Song[24].tempo = Initial_Tempo; Song[24].space = 10; Song[24].end = 0;
+  Song[25].note = D5; Song[25].size = quarter; Song[25].tempo = Initial_Tempo; Song[25].space = 10; Song[25].end = 0;
+  Song[26].note = A4; Song[26].size = quarter; Song[26].tempo = Initial_Tempo; Song[26].space = 10; Song[26].end = 0;
+  Song[27].note = rest; Song[27].size = quarter; Song[27].tempo = Initial_Tempo; Song[27].space = 10; Song[27].end = 0;
+  Song[28].note = D5; Song[28].size = quarter; Song[28].tempo = Initial_Tempo; Song[28].space = 100; Song[28].end = 0;
+  Song[29].note = rest; Song[29].size = _8th; Song[29].tempo = Initial_Tempo; Song[29].space = 10; Song[29].end = 0;
+  Song[30].note = B4; Song[30].size = _8th; Song[30].tempo = Initial_Tempo; Song[30].space = 10; Song[30].end = 0;
+  Song[31].note = A4; Song[31].size = quarter; Song[31].tempo = Initial_Tempo; Song[31].space = 100; Song[31].end = 0;
+  Song[32].note = G4; Song[32].size = quarter; Song[32].tempo = Initial_Tempo; Song[32].space = 100; Song[32].end = 0;
+  Song[33].note = Fs4_Gb4; Song[33].size = quarter; Song[33].tempo = Initial_Tempo; Song[33].space = 100; Song[33].end = 0;
+  Song[34].note = E4; Song[34].size = quarter; Song[34].tempo = Initial_Tempo; Song[34].space = 100; Song[34].end = 0;
+  Song[35].note = D4; Song[35].size = quarter; Song[35].tempo = Initial_Tempo; Song[35].space = 100; Song[35].end = 0;
+  Song[36].note = rest; Song[36].size = quarter; Song[36].tempo = Initial_Tempo; Song[36].space = 10; Song[36].end = 0;
+  Song[37].note = C5; Song[37].size = quarter; Song[37].tempo = Initial_Tempo; Song[37].space = 10; Song[37].end = 0;
+  Song[38].note = F5; Song[38].size = quarter; Song[38].tempo = Initial_Tempo; Song[38].space = 10; Song[38].end = 0;
+  Song[39].note = C5; Song[39].size = quarter; Song[39].tempo = Initial_Tempo; Song[39].space = 10; Song[39].end = 0;
+  Song[40].note = F4; Song[40].size = _8th; Song[40].tempo = Initial_Tempo; Song[40].space = 10; Song[40].end = 0;
+  Song[41].note = F4; Song[41].size = _8th; Song[41].tempo = Initial_Tempo; Song[41].space = 10; Song[41].end = 0;
+  Song[42].note = C5; Song[42].size = quarter; Song[42].tempo = Initial_Tempo; Song[42].space = 10; Song[42].end = 0;
+  Song[43].note = F5; Song[43].size = quarter; Song[43].tempo = Initial_Tempo; Song[43].space = 10; Song[43].end = 0;
+  Song[44].note = C5; Song[44].size = quarter; Song[44].tempo = Initial_Tempo; Song[44].space = 10; Song[44].end = 0;
+  Song[45].note = rest; Song[45].size = quarter; Song[45].tempo = Initial_Tempo; Song[45].space = 10; Song[45].end = 0;
+  Song[46].note = C5; Song[46].size = quarter; Song[46].tempo = Initial_Tempo; Song[46].space = 10; Song[46].end = 0;
+  Song[47].note = F5; Song[47].size = quarter; Song[47].tempo = Initial_Tempo; Song[47].space = 10; Song[47].end = 0;
+  Song[48].note = C5; Song[48].size = quarter; Song[48].tempo = Initial_Tempo; Song[48].space = 10; Song[48].end = 0;
+  Song[49].note = F5; Song[49].size = quarter; Song[49].tempo = Initial_Tempo; Song[49].space = 10; Song[49].end = 0;
+  Song[50].note = A5; Song[50].size = quarter; Song[50].tempo = Initial_Tempo; Song[50].space = 0; Song[50].end = 0;
+  Song[51].note = A5; Song[51].size = _8th; Song[51].tempo = Initial_Tempo; Song[51].space = 10; Song[51].end = 0;
+  Song[52].note = G5; Song[52].size = _8th; Song[52].tempo = Initial_Tempo; Song[52].space = 10; Song[52].end = 0;
+  Song[53].note = F5; Song[53].size = _8th; Song[53].tempo = Initial_Tempo; Song[53].space = 10; Song[53].end = 0;
+  Song[54].note = E5; Song[54].size = _8th; Song[54].tempo = Initial_Tempo; Song[54].space = 10; Song[54].end = 0;
+  Song[55].note = D5; Song[55].size = _8th; Song[55].tempo = Initial_Tempo; Song[55].space = 10; Song[55].end = 0;
+  Song[56].note = Cs5_Db5; Song[56].size = _8th; Song[56].tempo = Initial_Tempo; Song[56].space = 10; Song[56].end = 0;
+  Song[57].note = C5; Song[57].size = quarter; Song[57].tempo = Initial_Tempo; Song[57].space = 10; Song[57].end = 0;
+  Song[58].note = F5; Song[58].size = quarter; Song[58].tempo = Initial_Tempo; Song[58].space = 10; Song[58].end = 0;
+  Song[59].note = C5; Song[59].size = quarter; Song[59].tempo = Initial_Tempo; Song[59].space = 10; Song[59].end = 0;
+  Song[60].note = A4; Song[60].size = _8th; Song[60].tempo = Initial_Tempo; Song[60].space = 10; Song[60].end = 0;
+  Song[61].note = As4_Bb4; Song[61].size = _8th; Song[61].tempo = Initial_Tempo; Song[61].space = 10; Song[61].end = 0;
+  Song[62].note = C5; Song[62].size = quarter; Song[62].tempo = Initial_Tempo; Song[62].space = 10; Song[62].end = 0;
+  Song[63].note = F5; Song[63].size = quarter; Song[63].tempo = Initial_Tempo; Song[63].space = 10; Song[63].end = 0;
+  Song[64].note = C5; Song[64].size = quarter; Song[64].tempo = Initial_Tempo; Song[64].space = 10; Song[64].end = 0;
+  Song[65].note = rest; Song[65].size = _16th; Song[65].tempo = Initial_Tempo; Song[65].space = 10; Song[65].end = 0;
+  Song[66].note = C5; Song[66].size = _16th; Song[66].tempo = Initial_Tempo; Song[66].space = 10; Song[66].end = 0;
+  Song[67].note = D5; Song[67].size = _16th; Song[67].tempo = Initial_Tempo; Song[67].space = 10; Song[67].end = 0;
+  Song[68].note = E5; Song[68].size = _16th; Song[68].tempo = Initial_Tempo; Song[68].space = 10; Song[68].end = 0;
+  Song[69].note = F5; Song[69].size = quarter; Song[69].tempo = Initial_Tempo; Song[69].space = 100; Song[69].end = 0;
+  Song[70].note = rest; Song[70].size = _8th; Song[70].tempo = Initial_Tempo; Song[70].space = 10; Song[70].end = 0;
+  Song[71].note = D5; Song[71].size = _8th; Song[71].tempo = Initial_Tempo; Song[71].space = 10; Song[71].end = 0;
+  Song[72].note = C5; Song[72].size = quarter; Song[72].tempo = Initial_Tempo; Song[72].space = 100; Song[72].end = 0;
+  Song[73].note = As4_Bb4; Song[73].size = quarter; Song[73].tempo = Initial_Tempo; Song[73].space = 100; Song[73].end = 0;
+  Song[74].note = A4; Song[74].size = quarter; Song[74].tempo = Initial_Tempo; Song[74].space = 100; Song[74].end = 0;
+  Song[75].note = rest; Song[75].size = quarter; Song[75].tempo = Initial_Tempo; Song[75].space = 100; Song[75].end = 0;
+  Song[76].note = G4; Song[76].size = quarter; Song[76].tempo = Initial_Tempo; Song[76].space = 100; Song[76].end = 0;
+  Song[77].note = rest; Song[77].size = quarter; Song[77].tempo = Initial_Tempo; Song[77].space = 100; Song[77].end = 0;
+  Song[78].note = F4; Song[78].size = quarter; Song[78].tempo = Initial_Tempo; Song[78].space = 100; Song[78].end = 0;
+  Song[99].note = rest; Song[99].size = quarter; Song[99].tempo = Initial_Tempo; Song[99].space = 10; Song[99].end = 1;
+
+  Save_Note = Song[0].note;
   INDEX = 0;
   Music_ON = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  Message_Pointer = &Message[0];
-  Save_Pointer = &Message[0];
-  Message_Length = sizeof(Message)/sizeof(Message[0]);
+  Message_Pointer = &Startup_Message[0];
+  Save_Pointer = &Startup_Message[0];
+  Message_Length = sizeof(Startup_Message)/sizeof(Startup_Message[0]);
   Delay_msec = 200;
-  Animate_On = 0;
-
-
+  Animate_On = 1; 
+  Game_State = 0; 
+  Score = 0; 
+  
   while (1)
   {
-
     /* USER CODE BEGIN 3 */
+	  
+	  // 1. Read ADC for paddle position (Spec 1)
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, 100);
+	  ADC_value = HAL_ADC_GetValue(&hadc1);
+	  paddle_pos = (char)(ADC_value / 512); 
+
+	  // 2. Check for start button press (B1/PA0) and state change (Spec 4)
+	  if (Game_State == 0 && HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET)
+	  {
+		  Game_State = 1; 
+		  Animate_On = 0; 
+		  Music_ON = 1; 
+		  Score = 0; 
+		  Miss_Count = 0; 
+		  for(int i = 0; i < 8; i++) Display[i] = SPACE; 
+		  HAL_Delay(200); 
+	  }
+
+	  // 3. Game Logic when Playing
+	  if (Game_State == 1)
+	  {
+		  Update_Display_Buffer();
+	  }
+
+	  // 4. End of Round/Game Over Display
+	  if (Game_State == 2 || Game_State == 3)
+	  {
+		  Music_ON = 0;
+		  Animate_On = 1; 
+
+		  char final_message[40];
+		  int final_len = 0;
+		  
+		  for(int i = 0; i < 10; i++) final_message[final_len++] = SPACE;
+
+		  if (Game_State == 3) 
+		  {
+			  char go_msg[] = {CHAR_G,CHAR_A,CHAR_M,CHAR_E,SPACE,CHAR_O,CHAR_V,CHAR_E,CHAR_R,SPACE,CHAR_S,CHAR_C,CHAR_O,CHAR_R,CHAR_E,SPACE}; 
+			  for(int i=0; i < 16; i++) final_message[final_len++] = go_msg[i];
+		  }
+		  else 
+		  {
+			  char score_msg[] = {CHAR_S,CHAR_C,CHAR_O,CHAR_R,CHAR_E,SPACE}; 
+			  for(int i=0; i < 6; i++) final_message[final_len++] = score_msg[i];
+		  }
+		  
+		  final_message[final_len++] = (Score / 1000) % 10 + CHAR_0;
+		  final_message[final_len++] = (Score / 100) % 10 + CHAR_0;
+		  final_message[final_len++] = (Score / 10) % 10 + CHAR_0;
+		  final_message[final_len++] = Score % 10 + CHAR_0;
+
+		  for(int i = 0; i < 10; i++) final_message[final_len++] = SPACE;
+		  
+		  for (int i = 0; i < final_len && i < 40; i++) Message[i] = final_message[i];
+		  Message_Pointer = &Message[0];
+		  Save_Pointer = &Message[0];
+		  Message_Length = final_len;
+
+		  HAL_Delay(5000); 
+
+		  if (Game_State == 2)
+		  {
+			  Game_State = 1; 
+			  Animate_On = 0; 
+			  Music_ON = 1; 
+			  Miss_Count = 0; 
+			  for(int i = 0; i < 8; i++) Display[i] = SPACE;
+		  }
+		  else 
+		  {
+			  Game_State = 0; 
+			  
+			  Message_Pointer = &Startup_Message[0];
+			  Save_Pointer = &Startup_Message[0];
+			  Message_Length = sizeof(Startup_Message)/sizeof(Startup_Message[0]);
+		  }
+	  }
+
+
+	  // 5. Update 7-segment displays
+	  Display_7_Segment();
   }
   /* USER CODE END 3 */
 }
 
+/**
+  * @brief Populates the Display array with note indicators during game play (Spec 4)
+  * @retval None
+  */
+void Update_Display_Buffer(void)
+{
+	for(int i = 0; i < 8; i++) Display[i] = SPACE;
 
+	// i=3 is the farthest in the future (OVER), i=0 is the current note (CHAR_D)
+	for (int i = 3; i >= 0; i--)
+	{
+		int check_index = INDEX + i;
+		int display_pos = -1;
+		
+		if (check_index < 99 && Song[check_index].note != rest)
+		{
+			display_pos = get_display_for_note(Song[check_index].note);
+		}
+		
+		if (display_pos != -1)
+		{
+			if (i == 3)
+			{
+				Display[display_pos] = OVER; 
+			}
+			else if (i == 2)
+			{
+				Display[display_pos] = DASH; 
+			}
+			else if (i == 1)
+			{
+				Display[display_pos] = UNDER; 
+			}
+			else if (i == 0)
+			{
+				Display[display_pos] = CHAR_D; 
+			}
+		}
+	}
+}
+
+
+/**
+  * @brief Multiplexes the 7-segment display (Spec 1)
+  * @retval None
+  */
+void Display_7_Segment(void)
+{
+	static char digit_select = 0;
+	
+	GPIOE->ODR |= 0xFF00;
+
+	digit_select = (digit_select + 1) & 0x07; 
+	
+	char dot = 0;
+	
+	if (Game_State == 1 && digit_select == paddle_pos)
+	{
+		dot = 1; 
+	}
+
+	if (Animate_On == 0 && Game_State == 1)
+	{
+		Seven_Segment_Digit(digit_select, Display[digit_select], dot);
+	}
+}
 
 /**
   * @brief System Clock Configuration
@@ -717,9 +486,58 @@ void SystemClock_Config(void)
   }
 }
 
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
 
+  /* USER CODE BEGIN ADC1_Init 0 */
 
+  /* USER CODE END ADC1_Init 0 */
 
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockDivider = ADC_CLOCK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T1_CC1;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time
+  * Assuming PA1 is the potentiometer input (ADC1_IN1)
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
 
 
 static void MX_TIM7_Init(void)
@@ -807,7 +625,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT; 
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
@@ -816,6 +634,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(BOOT1_GPIO_Port, &GPIO_InitStruct);
+  
+  /*Configure GPIO pin : PA1 for ADC1_IN1 - Potentiometer */
+  GPIO_InitStruct.Pin = GPIO_PIN_1; 
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
 
   /*Configure GPIO pin : CLK_IN_Pin */
   GPIO_InitStruct.Pin = CLK_IN_Pin;
@@ -870,7 +695,7 @@ void Error_Handler(void)
 #ifdef  USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
+  * where the assert_param error has occurred.
   * @param  file: pointer to the source file name
   * @param  line: assert_param error line source number
   * @retval None
